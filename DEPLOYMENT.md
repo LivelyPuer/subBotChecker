@@ -4,7 +4,6 @@
 
 - **Node.js** версии 14.x или выше
 - **npm** или **yarn**
-- **PostgreSQL** версии 12+ 
 - **PM2** (Process Manager 2)
 - **Git** для клонирования репозитория
 
@@ -24,24 +23,6 @@ sudo apt-get install -y nodejs
 # Проверка версии
 node --version
 npm --version
-```
-
-### Установка PostgreSQL:
-```bash
-# Установка PostgreSQL
-sudo apt-get install -y postgresql postgresql-contrib
-
-# Запуск и автозапуск PostgreSQL
-sudo systemctl start postgresql
-sudo systemctl enable postgresql
-
-# Создание базы данных и пользователя
-sudo -u postgres psql << EOF
-CREATE DATABASE subscription_bot;
-CREATE USER botuser WITH ENCRYPTED PASSWORD 'your_secure_password';
-GRANT ALL PRIVILEGES ON DATABASE subscription_bot TO botuser;
-\q
-EOF
 ```
 
 ### Установка PM2 глобально:
@@ -72,12 +53,7 @@ sudo nano .env
 Добавьте в файл `.env`:
 ```env
 BOT_TOKEN=YOUR_BOT_TOKEN_HERE
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=subscription_bot
-DB_USER=botuser
-DB_PASSWORD=your_secure_password
-DB_SSL=false
+DATABASE_PATH=./bot_database.db
 NODE_ENV=production
 ```
 
@@ -115,12 +91,7 @@ module.exports = {
     // Переменные окружения
     env: {
       NODE_ENV: 'production',
-      DB_HOST: 'localhost',
-      DB_PORT: '5432',
-      DB_NAME: 'subscription_bot',
-      DB_USER: 'botuser',
-      DB_PASSWORD: 'your_secure_password',
-      DB_SSL: 'false'
+      DATABASE_PATH: './bot_database.db'
     },
     
     // Настройки автоперезапуска

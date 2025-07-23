@@ -41,19 +41,16 @@ check_uptime() {
     fi
 }
 
-# Проверка доступности базы данных PostgreSQL
+# Проверка доступности базы данных
 check_database() {
-    if [[ -f "$PROJECT_DIR/.env" ]]; then
-        source "$PROJECT_DIR/.env"
-        
-        # Проверяем подключение к PostgreSQL
-        if PGPASSWORD=$DB_PASSWORD psql -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME -c "SELECT 1;" >/dev/null 2>&1; then
+    if [[ -f "$PROJECT_DIR/bot_database.db" ]]; then
+        if [[ -r "$PROJECT_DIR/bot_database.db" ]]; then
             echo "ok"
         else
-            echo "connection_failed"
+            echo "not_readable"
         fi
     else
-        echo "config_not_found"
+        echo "not_found"
     fi
 }
 

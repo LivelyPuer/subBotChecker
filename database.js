@@ -1,338 +1,261 @@
-const { Pool } = require('pg');
+const sqlite3 = require('sqlite3').verbose();
+const path = require('path');
 
 class Database {
     constructor() {
-        this.pool = new Pool({
-            user: process.env.DB_USER || 'postgres',
-            host: process.env.DB_HOST || 'localhost',
-            database: process.env.DB_NAME || 'subscription_bot',
-            password: process.env.DB_PASSWORD || 'password',
-            port: process.env.DB_PORT || 5432,
-            ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false,
-            max: 20, // максимальное количество соединений в пуле
-            idleTimeoutMillis: 30000, // время ожидания перед закрытием неактивного соединения
-            connectionTimeoutMillis: 2000, // время ожидания при подключении
-        });
-        
-        this.pool.on('connect', () => {
-            console.log('✅ Подключение к PostgreSQL установлено');
-        });
-        
-        this.pool.on('error', (err) => {
-            console.error('❌ Ошибка подключения к PostgreSQL:', err);
-        });
-        
+        this.db = new sqlite3.Database(path.join(__dirname, 'bot.db'));
         this.init();
     }
 
-    async init() {
-        try {
-            // Создание таблицы каналов
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS channels (
-                    id SERIAL PRIMARY KEY,
-                    channel_id TEXT UNIQUE NOT NULL,
-                    channel_name TEXT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            `);
+    init() {
+        // Таблица каналов
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS channels (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT UNIQUE NOT NULL,
+                channel_name TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+            )
+        `);
 
-            // Таблица администраторов каналов
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS channel_admins (
-                    id SERIAL PRIMARY KEY,
-                    channel_id TEXT NOT NULL,
-                    user_id BIGINT NOT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (channel_id) REFERENCES channels(channel_id) ON DELETE CASCADE
-                )
-            `);
+        // Таблица администраторов каналов
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS channel_admins (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id TEXT NOT NULL,
+                channel_id TEXT NOT NULL,
+                is_super_admin BOOLEAN DEFAULT 0,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
+            )
+        `);
 
-            // Таблица постов
-            await this.pool.query(`
-                CREATE TABLE IF NOT EXISTS posts (
-                    id SERIAL PRIMARY KEY,
-                    channel_id TEXT NOT NULL,
-                    message_text TEXT NOT NULL,
-                    success_text TEXT NOT NULL,
-                    fail_text TEXT DEFAULT 'Вы не подписаны на канал! Подпишитесь и попробуйте снова.',
-                    button_text TEXT NOT NULL,
-                    photo_file_id TEXT DEFAULT NULL,
-                    message_id INTEGER DEFAULT NULL,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (channel_id) REFERENCES channels(channel_id) ON DELETE CASCADE
-                )
-            `);
+        // Таблица постов
+        this.db.run(`
+            CREATE TABLE IF NOT EXISTS posts (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                channel_id TEXT NOT NULL,
+                message_text TEXT NOT NULL,
+                success_text TEXT NOT NULL,
+                fail_text TEXT DEFAULT 'Вы не подписаны на канал! Подпишитесь и попробуйте снова.',
+                button_text TEXT DEFAULT 'Проверить подписку',
+                photo_file_id TEXT,
+                message_id TEXT,
+                created_by TEXT NOT NULL,
+                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (channel_id) REFERENCES channels(channel_id)
+            )
+        `);
 
-            console.log('✅ Таблицы PostgreSQL инициализированы');
-        } catch (error) {
-            console.error('❌ Ошибка при инициализации таблиц:', error);
-            throw error;
-        }
+        // Добавляем новые столбцы к существующим таблицам (миграция)
+        this.db.run(`
+            ALTER TABLE posts ADD COLUMN fail_text TEXT DEFAULT 'Вы не подписаны на канал! Подпишитесь и попробуйте снова.'
+        `, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+                console.log('Столбец fail_text уже существует или другая ошибка:', err.message);
+            } else if (!err) {
+                console.log('Добавлен новый столбец fail_text');
+            }
+        });
+
+        this.db.run(`
+            ALTER TABLE posts ADD COLUMN photo_file_id TEXT
+        `, (err) => {
+            if (err && !err.message.includes('duplicate column name')) {
+                console.log('Столбец photo_file_id уже существует или другая ошибка:', err.message);
+            } else if (!err) {
+                console.log('Добавлен новый столбец photo_file_id');
+            }
+        });
+
+        console.log('База данных инициализирована');
     }
 
-    // Проверка подключения к базе данных
-    async testConnection() {
-        try {
-            const result = await this.pool.query('SELECT NOW()');
-            console.log('✅ Соединение с PostgreSQL работает:', result.rows[0].now);
-            return true;
-        } catch (error) {
-            console.error('❌ Ошибка подключения к PostgreSQL:', error);
-            return false;
-        }
+    // Методы для работы с каналами
+    addChannel(channelId, channelName) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'INSERT OR REPLACE INTO channels (channel_id, channel_name) VALUES (?, ?)',
+                [channelId, channelName],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.lastID);
+                }
+            );
+        });
     }
 
-    // Добавление канала
-    async addChannel(channelId, channelName) {
-        try {
-            const query = 'INSERT INTO channels (channel_id, channel_name) VALUES ($1, $2) ON CONFLICT (channel_id) DO NOTHING RETURNING id';
-            const result = await this.pool.query(query, [channelId, channelName]);
-            return result.rows[0]?.id || null;
-        } catch (error) {
-            console.error('Ошибка при добавлении канала:', error);
-            throw error;
-        }
+    getChannels() {
+        return new Promise((resolve, reject) => {
+            this.db.all('SELECT * FROM channels', (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
     }
 
-    // Получение канала по ID
-    async getChannel(channelId) {
-        try {
-            const query = 'SELECT * FROM channels WHERE channel_id = $1';
-            const result = await this.pool.query(query, [channelId]);
-            return result.rows[0] || null;
-        } catch (error) {
-            console.error('Ошибка при получении канала:', error);
-            throw error;
-        }
+    // Методы для работы с администраторами
+    addChannelAdmin(userId, channelId, isSuperAdmin = false) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'INSERT OR REPLACE INTO channel_admins (user_id, channel_id, is_super_admin) VALUES (?, ?, ?)',
+                [userId, channelId, isSuperAdmin],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.lastID);
+                }
+            );
+        });
     }
 
-    // Получение всех каналов пользователя
-    async getUserChannels(userId) {
-        try {
-            const query = `
-                SELECT DISTINCT c.* FROM channels c
+    isChannelAdmin(userId, channelId) {
+        return new Promise((resolve, reject) => {
+            this.db.get(
+                'SELECT * FROM channel_admins WHERE user_id = ? AND channel_id = ?',
+                [userId, channelId],
+                (err, row) => {
+                    if (err) reject(err);
+                    else resolve(!!row);
+                }
+            );
+        });
+    }
+
+    getUserChannels(userId) {
+        return new Promise((resolve, reject) => {
+            this.db.all(`
+                SELECT c.* FROM channels c
                 JOIN channel_admins ca ON c.channel_id = ca.channel_id
-                WHERE ca.user_id = $1
-                ORDER BY c.created_at DESC
-            `;
-            const result = await this.pool.query(query, [userId]);
-            return result.rows;
-        } catch (error) {
-            console.error('Ошибка при получении каналов пользователя:', error);
-            throw error;
-        }
+                WHERE ca.user_id = ?
+            `, [userId], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
     }
 
-    // Добавление администратора канала
-    async addChannelAdmin(channelId, userId) {
-        try {
-            const query = `
-                INSERT INTO channel_admins (channel_id, user_id) 
-                VALUES ($1, $2) 
-                ON CONFLICT DO NOTHING 
-                RETURNING id
-            `;
-            const result = await this.pool.query(query, [channelId, userId]);
-            return result.rows[0]?.id || null;
-        } catch (error) {
-            console.error('Ошибка при добавлении админа канала:', error);
-            throw error;
-        }
+    // Методы для работы с постами
+    addPost(channelId, messageText, successText, failText, buttonText, createdBy, photoFileId = null) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'INSERT INTO posts (channel_id, message_text, success_text, fail_text, button_text, photo_file_id, created_by) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                [channelId, messageText, successText, failText, buttonText, photoFileId, createdBy],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.lastID);
+                }
+            );
+        });
     }
 
-    // Проверка является ли пользователь администратором канала
-    async isChannelAdmin(userId, channelId) {
-        try {
-            const query = 'SELECT 1 FROM channel_admins WHERE user_id = $1 AND channel_id = $2';
-            const result = await this.pool.query(query, [userId, channelId]);
-            return result.rows.length > 0;
-        } catch (error) {
-            console.error('Ошибка при проверке прав админа:', error);
-            throw error;
-        }
+    updatePostMessageId(postId, messageId) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET message_id = ? WHERE id = ?',
+                [messageId, postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 
-    // Создание поста
-    async createPost(channelId, messageText, successText, failText, buttonText, photoFileId = null) {
-        try {
-            const query = `
-                INSERT INTO posts (channel_id, message_text, success_text, fail_text, button_text, photo_file_id)
-                VALUES ($1, $2, $3, $4, $5, $6)
-                RETURNING id
-            `;
-            const result = await this.pool.query(query, [channelId, messageText, successText, failText, buttonText, photoFileId]);
-            return result.rows[0].id;
-        } catch (error) {
-            console.error('Ошибка при создании поста:', error);
-            throw error;
-        }
+    getPost(postId) {
+        return new Promise((resolve, reject) => {
+            this.db.get('SELECT * FROM posts WHERE id = ?', [postId], (err, row) => {
+                if (err) reject(err);
+                else resolve(row);
+            });
+        });
     }
 
-    // Получение поста по ID
-    async getPost(postId) {
-        try {
-            const query = 'SELECT * FROM posts WHERE id = $1';
-            const result = await this.pool.query(query, [postId]);
-            return result.rows[0] || null;
-        } catch (error) {
-            console.error('Ошибка при получении поста:', error);
-            throw error;
-        }
+    getChannelPosts(channelId) {
+        return new Promise((resolve, reject) => {
+            this.db.all('SELECT * FROM posts WHERE channel_id = ? ORDER BY created_at DESC', [channelId], (err, rows) => {
+                if (err) reject(err);
+                else resolve(rows);
+            });
+        });
     }
 
-    // Получение всех постов канала
-    async getChannelPosts(channelId) {
-        try {
-            const query = 'SELECT * FROM posts WHERE channel_id = $1 ORDER BY created_at DESC';
-            const result = await this.pool.query(query, [channelId]);
-            return result.rows;
-        } catch (error) {
-            console.error('Ошибка при получении постов канала:', error);
-            throw error;
-        }
+    // Методы для редактирования постов
+    updatePostMessage(postId, messageText) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET message_text = ? WHERE id = ?',
+                [messageText, postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 
-    // Обновление ID сообщения поста
-    async updatePostMessageId(postId, messageId) {
-        try {
-            const query = 'UPDATE posts SET message_id = $1 WHERE id = $2';
-            await this.pool.query(query, [messageId, postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при обновлении ID сообщения:', error);
-            throw error;
-        }
+    updatePostPhoto(postId, photoFileId) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET photo_file_id = ? WHERE id = ?',
+                [photoFileId, postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 
-    // Обновление текста поста
-    async updatePostMessage(postId, messageText) {
-        try {
-            const query = 'UPDATE posts SET message_text = $1 WHERE id = $2';
-            await this.pool.query(query, [messageText, postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при обновлении текста поста:', error);
-            throw error;
-        }
+    updatePostSuccessText(postId, successText) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET success_text = ? WHERE id = ?',
+                [successText, postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 
-    // Обновление изображения поста
-    async updatePostPhoto(postId, photoFileId) {
-        try {
-            const query = 'UPDATE posts SET photo_file_id = $1 WHERE id = $2';
-            await this.pool.query(query, [photoFileId, postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при обновлении изображения поста:', error);
-            throw error;
-        }
+    updatePostFailText(postId, failText) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET fail_text = ? WHERE id = ?',
+                [failText, postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 
-    // Удаление изображения поста
-    async removePostPhoto(postId) {
-        try {
-            const query = 'UPDATE posts SET photo_file_id = NULL WHERE id = $1';
-            await this.pool.query(query, [postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при удалении изображения поста:', error);
-            throw error;
-        }
+    updatePostButtonText(postId, buttonText) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET button_text = ? WHERE id = ?',
+                [buttonText, postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 
-    // Обновление текста успешной проверки
-    async updatePostSuccessText(postId, successText) {
-        try {
-            const query = 'UPDATE posts SET success_text = $1 WHERE id = $2';
-            await this.pool.query(query, [successText, postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при обновлении текста успеха:', error);
-            throw error;
-        }
-    }
-
-    // Обновление текста неудачной проверки
-    async updatePostFailText(postId, failText) {
-        try {
-            const query = 'UPDATE posts SET fail_text = $1 WHERE id = $2';
-            await this.pool.query(query, [failText, postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при обновлении текста неудачи:', error);
-            throw error;
-        }
-    }
-
-    // Обновление текста кнопки
-    async updatePostButtonText(postId, buttonText) {
-        try {
-            const query = 'UPDATE posts SET button_text = $1 WHERE id = $2';
-            await this.pool.query(query, [buttonText, postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при обновлении текста кнопки:', error);
-            throw error;
-        }
-    }
-
-    // Удаление поста
-    async deletePost(postId) {
-        try {
-            const query = 'DELETE FROM posts WHERE id = $1';
-            await this.pool.query(query, [postId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при удалении поста:', error);
-            throw error;
-        }
-    }
-
-    // Удаление канала и всех связанных данных
-    async deleteChannel(channelId) {
-        try {
-            const query = 'DELETE FROM channels WHERE channel_id = $1';
-            await this.pool.query(query, [channelId]);
-            return true;
-        } catch (error) {
-            console.error('Ошибка при удалении канала:', error);
-            throw error;
-        }
-    }
-
-    // Получение статистики
-    async getStats() {
-        try {
-            const channelsQuery = 'SELECT COUNT(*) as count FROM channels';
-            const postsQuery = 'SELECT COUNT(*) as count FROM posts';
-            const adminsQuery = 'SELECT COUNT(*) as count FROM channel_admins';
-
-            const [channelsResult, postsResult, adminsResult] = await Promise.all([
-                this.pool.query(channelsQuery),
-                this.pool.query(postsQuery),
-                this.pool.query(adminsQuery)
-            ]);
-
-            return {
-                channels: parseInt(channelsResult.rows[0].count),
-                posts: parseInt(postsResult.rows[0].count),
-                admins: parseInt(adminsResult.rows[0].count)
-            };
-        } catch (error) {
-            console.error('Ошибка при получении статистики:', error);
-            throw error;
-        }
-    }
-
-    // Закрытие соединения с базой данных
-    async close() {
-        try {
-            await this.pool.end();
-            console.log('🔐 Соединение с PostgreSQL закрыто');
-        } catch (error) {
-            console.error('Ошибка при закрытии соединения:', error);
-        }
+    removePostPhoto(postId) {
+        return new Promise((resolve, reject) => {
+            this.db.run(
+                'UPDATE posts SET photo_file_id = NULL WHERE id = ?',
+                [postId],
+                function(err) {
+                    if (err) reject(err);
+                    else resolve(this.changes);
+                }
+            );
+        });
     }
 }
 

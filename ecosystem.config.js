@@ -7,13 +7,7 @@ module.exports = {
     
     // Переменные окружения
     env: {
-      NODE_ENV: 'production',
-      DB_HOST: 'localhost',
-      DB_PORT: '5432',
-      DB_NAME: 'subscription_bot',
-      DB_USER: 'botuser',
-      DB_PASSWORD: 'your_secure_password',
-      DB_SSL: 'false'
+      NODE_ENV: 'production'
     },
     
     // Настройки автоперезапуска

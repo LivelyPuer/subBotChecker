@@ -66,40 +66,6 @@ install_nodejs() {
     fi
 }
 
-# Установка PostgreSQL
-install_postgresql() {
-    print_status "Проверка PostgreSQL..."
-    
-    if command -v psql >/dev/null 2>&1; then
-        PG_VERSION=$(psql --version | awk '{print $3}')
-        print_success "PostgreSQL уже установлен: $PG_VERSION"
-    else
-        print_status "Установка PostgreSQL..."
-        apt-get install -y postgresql postgresql-contrib
-        systemctl start postgresql
-        systemctl enable postgresql
-        print_success "PostgreSQL установлен и запущен"
-        
-        # Создание базы данных и пользователя
-        setup_database
-    fi
-}
-
-# Настройка базы данных PostgreSQL
-setup_database() {
-    print_status "Настройка базы данных PostgreSQL..."
-    
-    # Создание базы данных и пользователя
-    sudo -u postgres psql << EOF
-CREATE DATABASE subscription_bot;
-CREATE USER botuser WITH ENCRYPTED PASSWORD 'secure_password_2024';
-GRANT ALL PRIVILEGES ON DATABASE subscription_bot TO botuser;
-\q
-EOF
-    
-    print_success "База данных subscription_bot создана"
-}
-
 # Установка PM2
 install_pm2() {
     print_status "Проверка PM2..."
@@ -159,12 +125,7 @@ setup_project() {
         print_status "Создание файла .env..."
         cat > $PROJECT_DIR/.env << EOF
 BOT_TOKEN=YOUR_BOT_TOKEN_HERE
-DB_HOST=localhost
-DB_PORT=5432
-DB_NAME=subscription_bot
-DB_USER=botuser
-DB_PASSWORD=secure_password_2024
-DB_SSL=false
+DATABASE_PATH=./bot_database.db
 NODE_ENV=production
 EOF
         chmod 600 $PROJECT_DIR/.env

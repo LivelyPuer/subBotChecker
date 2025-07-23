@@ -56,17 +56,12 @@ create_backup() {
     # Копирование важных файлов
     print_status "Копирование файлов..."
     
-    # База данных PostgreSQL
-    if [[ -f "$PROJECT_DIR/.env" ]]; then
-        source "$PROJECT_DIR/.env"
-        pg_dump -h $DB_HOST -p $DB_PORT -U $DB_USER -d $DB_NAME > "$temp_dir/database_backup.sql" 2>/dev/null
-        if [[ -f "$temp_dir/database_backup.sql" ]]; then
-            print_status "✓ База данных PostgreSQL скопирована"
-        else
-            print_error "Ошибка при создании резервной копии БД"
-        fi
+    # База данных
+    if [[ -f "$PROJECT_DIR/bot_database.db" ]]; then
+        cp "$PROJECT_DIR/bot_database.db" "$temp_dir/"
+        print_status "✓ База данных скопирована"
     else
-        print_error "Файл .env не найден"
+        print_error "База данных не найдена"
     fi
     
     # Конфигурационные файлы

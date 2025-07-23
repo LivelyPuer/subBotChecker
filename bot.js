@@ -284,7 +284,7 @@ bot.on('text', async (ctx) => {
             const chat = await ctx.telegram.getChat(channelInput);
             
             await db.addChannel(channelInput, chat.title || chat.username);
-            await db.addChannelAdmin(channelInput, userId);
+            await db.addChannelAdmin(userId, channelInput);
             
             ctx.session.state = STATES.IDLE;
             
@@ -451,12 +451,13 @@ bot.on('text', async (ctx) => {
         
         try {
             // Создаем пост в базе данных
-            const postId = await db.createPost(
+            const postId = await db.addPost(
                 ctx.session.postData.channelId,
                 ctx.session.postData.messageText,
                 ctx.session.postData.successText,
                 ctx.session.postData.failText || 'Вы не подписаны на канал! Подпишитесь и попробуйте снова.',
                 buttonText,
+                userId,
                 ctx.session.postData.photoFileId
             );
             
@@ -968,12 +969,13 @@ bot.on('callback_query', async (ctx) => {
              
              try {
                  // Создаем пост в базе данных
-                 const postId = await db.createPost(
+                 const postId = await db.addPost(
                      ctx.session.postData.channelId,
                      ctx.session.postData.messageText,
                      ctx.session.postData.successText,
                      ctx.session.postData.failText || 'Вы не подписаны на канал! Подпишитесь и попробуйте снова.',
                      buttonText,
+                     userId,
                      ctx.session.postData.photoFileId
                  );
                  
