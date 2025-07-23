@@ -47,16 +47,14 @@ async function setupDatabase() {
         await testConnection(adminPool, 'PostgreSQL (системная БД)');
         await adminPool.end();
         
-        // 4. Подключаемся к созданной базе данных
-        log('\n4️⃣ Подключение к базе данных бота...', 'yellow');
+        // 4. Подключаемся к базе данных
+        log('\n4️⃣ Подключение к базе данных...', 'yellow');
         botPool = new Pool({
             ...dbConfig,
-            database: targetDbName,
-            user: botUser,
-            password: botPassword
+            database: targetDbName
         });
         
-        await testConnection(botPool, 'База данных бота');
+        await testConnection(botPool, 'База данных');
         
         // 5. Создаем таблицы
         log('\n5️⃣ Создание таблиц...', 'yellow');
@@ -138,10 +136,15 @@ async function createTables(pool) {
         await pool.query('CREATE INDEX IF NOT EXISTS idx_posts_channel_id ON posts(channel_id)');
         log('✅ Индексы созданы', 'green');
 
-        // Даем права на все таблицы и последовательности
-        await pool.query('GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO $1', [botUser]);
-        await pool.query('GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO $1', [botUser]);
-        log('✅ Права на таблицы предоставлены', 'green');
+        // Пытаемся предоставить права (может не сработать на удаленном сервере)
+        try {
+            await pool.query(`GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA public TO ${process.env.DB_USER}`);
+            await pool.query(`GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA public TO ${process.env.DB_USER}`);
+            log('✅ Права на таблицы предоставлены', 'green');
+        } catch (error) {
+            log('⚠️ Не удалось предоставить права автоматически', 'yellow');
+            log('📝 Запросите у администратора БД выполнение команд из setup.sql', 'yellow');
+        }
 
     } catch (error) {
         throw new Error(`Ошибка создания таблиц: ${error.message}`);
