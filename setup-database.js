@@ -45,15 +45,6 @@ async function setupDatabase() {
         });
         
         await testConnection(adminPool, 'PostgreSQL (системная БД)');
-        
-        // 2. Создаем пользователя если не существует
-        log('\n2️⃣ Создание пользователя бота...', 'yellow');
-        await createBotUser(adminPool);
-        
-        // 3. Создаем базу данных если не существует
-        log('\n3️⃣ Создание базы данных...', 'yellow');
-        await createDatabase(adminPool);
-        
         await adminPool.end();
         
         // 4. Подключаемся к созданной базе данных
@@ -96,56 +87,6 @@ async function testConnection(pool, description) {
         log(`   Версия: ${result.rows[0].pg_version.split(' ')[0]} ${result.rows[0].pg_version.split(' ')[1]}`, 'blue');
     } catch (error) {
         throw new Error(`Не удалось подключиться к ${description}: ${error.message}`);
-    }
-}
-
-async function createBotUser(pool) {
-    try {
-        // Проверяем существует ли пользователь
-        const userCheck = await pool.query(
-            'SELECT 1 FROM pg_roles WHERE rolname = $1',
-            [botUser]
-        );
-        
-        if (userCheck.rows.length > 0) {
-            log(`✅ Пользователь '${botUser}' уже существует`, 'green');
-        } else {
-            // Создаем пользователя
-            await pool.query(`CREATE USER ${botUser} WITH ENCRYPTED PASSWORD '${botPassword}'`);
-            log(`✅ Создан пользователь '${botUser}'`, 'green');
-        }
-        
-        // Даем права на создание БД (нужно для создания таблиц)
-        await pool.query(`ALTER USER ${botUser} CREATEDB`);
-        log(`✅ Предоставлены права пользователю '${botUser}'`, 'green');
-        
-    } catch (error) {
-        throw new Error(`Ошибка создания пользователя: ${error.message}`);
-    }
-}
-
-async function createDatabase(pool) {
-    try {
-        // Проверяем существует ли база данных
-        const dbCheck = await pool.query(
-            'SELECT 1 FROM pg_database WHERE datname = $1',
-            [targetDbName]
-        );
-        
-        if (dbCheck.rows.length > 0) {
-            log(`✅ База данных '${targetDbName}' уже существует`, 'green');
-        } else {
-            // Создаем базу данных
-            await pool.query(`CREATE DATABASE ${targetDbName} OWNER ${botUser}`);
-            log(`✅ Создана база данных '${targetDbName}'`, 'green');
-        }
-        
-        // Даем все права на БД
-        await pool.query(`GRANT ALL PRIVILEGES ON DATABASE ${targetDbName} TO ${botUser}`);
-        log(`✅ Предоставлены права на базу данных '${targetDbName}'`, 'green');
-        
-    } catch (error) {
-        throw new Error(`Ошибка создания базы данных: ${error.message}`);
     }
 }
 
