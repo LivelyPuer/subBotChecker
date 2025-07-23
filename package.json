@@ -1,0 +1,26 @@
+{
+  "name": "subscription-checker-bot",
+  "version": "1.0.0",
+  "description": "Telegram бот для проверки подписок на каналы с локальным администрированием",
+  "main": "bot.js",
+  "scripts": {
+    "start": "node bot.js",
+    "dev": "nodemon bot.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "subscription",
+    "checker"
+  ],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "dotenv": "^16.3.1",
+    "pg": "^8.16.3",
+    "telegraf": "^4.15.6"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.2"
+  }
+}
